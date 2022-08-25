@@ -1,0 +1,17 @@
+FROM ubuntu:bionic as builder
+
+RUN apt-get -qq update \
+&& DEBIAN_FRONTEND="noninteractive" apt-get install -y bc devscripts quilt git flex bison libssl-dev libelf-dev debhelper
+
+COPY ./ /opt
+
+ARG UBUNTU_KERNEL_VERSION
+
+WORKDIR /opt
+
+RUN /opt/prepare_ubuntu.sh
+
+RUN bash -c 'source ./.build_vars && dpkg-buildpackage -us -uc -j && mkdir -p /opt/out && mv ../*.deb /opt/out'
+
+FROM scratch as artifact
+COPY --from=builder /opt/out /out

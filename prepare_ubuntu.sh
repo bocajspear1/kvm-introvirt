@@ -18,21 +18,35 @@ then
     exit 0
 fi
 
-DISTRO=$(git branch|grep ^\*|grep -Po ' \K[a-zA-Z]+(?=/)')
-DISTRO_RELEASE=$(git branch|grep ^\*|grep -Po "(?<=$DISTRO/).*(?=/)")
-HWE_TAG=$(git branch|grep ^\*|grep -Po "Ubuntu-hwe-[^-]+")
+
+echo "${UBUNTU_KERNEL_VERSION}"
+DISTRO=$(echo "${UBUNTU_KERNEL_VERSION}" | cut -d'/' -f 1)
+echo "DISTRO: ${DISTRO}"
+DISTRO_RELEASE=$(echo "${UBUNTU_KERNEL_VERSION}" | cut -d'/' -f 2)
+echo "DISTRO_RELEASE: ${DISTRO_RELEASE}"
+KERNEL_VERSION_RAW=$(echo "${UBUNTU_KERNEL_VERSION}" | cut -d'/' -f 3)
+echo "KERNEL_VERSION_RAW: ${KERNEL_VERSION_RAW}"
+
+HWE_TAG=$(echo "${UBUNTU_KERNEL_VERSION}"|grep -Po "Ubuntu-hwe-[^-]+")
 if [ -z "$HWE_TAG" ]
 then
-    KERNEL_TAG=$(git branch|grep ^\*|grep -Po "(?<=$DISTRO_RELEASE/)[_a-zA-Z0-9-\.]+(?=$)")
+    KERNEL_TAG=$(echo "${UBUNTU_KERNEL_VERSION}"|grep -Po "(?<=$DISTRO_RELEASE/)[_a-zA-Z0-9-\.]+(?=$)")
     HWE_VERSION=""
 else
-    KERNEL_TAG=$(git branch|grep ^\*|grep -Po "(?<=$DISTRO_RELEASE/)$HWE_TAG-[_a-zA-Z0-9-\.]+(?=$)")
+    KERNEL_TAG=$(echo "${UBUNTU_KERNEL_VERSION}"|grep -Po "(?<=$DISTRO_RELEASE/)$HWE_TAG-[_a-zA-Z0-9-\.]+(?=$)")
     HWE_VERSION=$(echo $HWE_TAG|grep -Po "[0-9\.]+")
 fi
 KERNEL_FLAVOR="-generic"
-KERNEL_VERSION=$(git branch|grep ^\*|grep -Po "(?<=$HWE_VERSION\-)[0-9\.-]+(?=\.[0-9]+)")
-KERNEL_VERSION_FULL=$(git branch|grep ^\*|grep -Po "(?<=$HWE_VERSION\-)[0-9\.-]+\.[0-9]+")
+KERNEL_VERSION=$(echo "${UBUNTU_KERNEL_VERSION}"|grep -Po "(?<=$HWE_VERSION\-)[0-9\.-]+(?=\.[0-9]+)")
+echo "KERNEL_VERSION: ${KERNEL_VERSION}"
+KERNEL_VERSION_MAJOR=$(echo "${KERNEL_VERSION}"|grep -Po "^([0-9]+\.[0-9]+)")
+echo "KERNEL_VERSION_MAJOR: ${KERNEL_VERSION_MAJOR}"
+KERNEL_VERSION_FULL=$(echo "${UBUNTU_KERNEL_VERSION}"|grep -Po "(?<=$HWE_VERSION\-)[0-9\.-]+\.[0-9]+")
+echo "KERNEL_VERSION_FULL: ${KERNEL_VERSION_FULL}"
 PATCH_VERSION=$(head -n1 debian/changelog |grep -Po "(?<=$KERNEL_VERSION_FULL-).*(?=~)")
+echo "PATCH_VERSION: ${PATCH_VERSION}"
+
+apt-get install -y kmod linux-headers-${KERNEL_VERSION}${KERNEL_FLAVOR} linux-modules-${KERNEL_VERSION}${KERNEL_FLAVOR}
 
 #TODO: We're assuming Ubuntu right now
 
@@ -40,6 +54,8 @@ if [[ ! -d kernel ]]
 then
     # Clone the kernel into a working directory
     git clone --branch $KERNEL_TAG --depth 1 git://kernel.ubuntu.com/ubuntu/ubuntu-$DISTRO_RELEASE.git kernel
+
+    export QUILT_PATCHES=patches/${DISTRO}/${DISTRO_RELEASE}/${KERNEL_VERSION_MAJOR}/${KERNEL_VERSION_FULL}
     # Apply patches
     quilt push -a
 fi
@@ -69,7 +85,10 @@ cp -f debian/kvm-introvirt.install.tpl "debian/kvm-introvirt-$KERNEL_VERSION-gen
 cp -f debian/kvm-introvirt.postinst.tpl "debian/kvm-introvirt-$KERNEL_VERSION-generic.postinst"
 
 sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+-[0-9]\+\.[0-9]\+/$KERNEL_VERSION_FULL/g" debian/changelog
+sed -i "s/focal/${DISTRO_RELEASE}/g" debian/changelog
 sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+-[0-9]\+$KERNEL_FLAVOR/$KERNEL_VERSION$KERNEL_FLAVOR/g" debian/control
 sed -i "s/[0-9]\+\.[0-9]\+\.[0-9]\+-[0-9]\+$KERNEL_FLAVOR/$KERNEL_VERSION$KERNEL_FLAVOR/g" debian/*.postinst
+
+make
 
 exit 0
